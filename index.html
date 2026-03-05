@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Growing Polygon Bounce</title>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at 20% 20%, #20263f 0%, #0a0d18 55%, #03040a 100%);
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      color: #d8e4ff;
+    }
+
+    .app {
+      width: min(92vw, 880px);
+      display: grid;
+      gap: 1rem;
+      justify-items: center;
+    }
+
+    canvas {
+      width: min(92vw, 720px);
+      aspect-ratio: 1;
+      border-radius: 16px;
+      background: linear-gradient(135deg, rgba(99, 140, 255, 0.12), rgba(42, 252, 199, 0.08));
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45), inset 0 0 60px rgba(139, 180, 255, 0.06);
+      border: 1px solid rgba(150, 177, 255, 0.25);
+    }
+
+    .hud {
+      display: flex;
+      gap: 1.4rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .pill {
+      background: rgba(16, 22, 45, 0.78);
+      border: 1px solid rgba(142, 170, 255, 0.35);
+      border-radius: 999px;
+      padding: 0.5rem 0.9rem;
+      backdrop-filter: blur(6px);
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <canvas id="scene" width="760" height="760" aria-label="Ball bouncing in a growing polygon"></canvas>
+    <div class="hud">
+      <div class="pill">Sides: <span id="sides">3</span></div>
+      <div class="pill">Speed: <span id="speed">0.00</span></div>
+      <div class="pill">Collisions: <span id="hits">0</span></div>
+    </div>
+  </main>
+
+  <script>
+    const canvas = document.getElementById('scene');
+    const ctx = canvas.getContext('2d');
+
+    const center = { x: canvas.width / 2, y: canvas.height / 2 };
+    const polygonRadius = canvas.width * 0.34;
+    const maxSides = 28;
+
+    let sides = 3;
+    let collisions = 0;
+
+    const ball = {
+      x: center.x,
+      y: center.y,
+      radius: 9,
+      vx: 2.2,
+      vy: -1.8,
+      hue: 170
+    };
+
+    const sideCounter = document.getElementById('sides');
+    const speedCounter = document.getElementById('speed');
+    const hitCounter = document.getElementById('hits');
+
+    const speedUpFactor = 1.06;
+
+    function polygonVertices(n) {
+      const points = [];
+      const startAngle = -Math.PI / 2;
+      for (let i = 0; i < n; i += 1) {
+        const angle = startAngle + (i * Math.PI * 2) / n;
+        points.push({
+          x: center.x + Math.cos(angle) * polygonRadius,
+          y: center.y + Math.sin(angle) * polygonRadius
+        });
+      }
+      return points;
+    }
+
+    function reflectVelocity(normalX, normalY) {
+      const dot = ball.vx * normalX + ball.vy * normalY;
+      ball.vx -= 2 * dot * normalX;
+      ball.vy -= 2 * dot * normalY;
+    }
+
+    function updateBall() {
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      const vertices = polygonVertices(sides);
+      let bounced = false;
+
+      for (let i = 0; i < vertices.length; i += 1) {
+        const a = vertices[i];
+        const b = vertices[(i + 1) % vertices.length];
+
+        const edgeX = b.x - a.x;
+        const edgeY = b.y - a.y;
+        const edgeLen = Math.hypot(edgeX, edgeY);
+
+        const inwardNormalX = -edgeY / edgeLen;
+        const inwardNormalY = edgeX / edgeLen;
+
+        const relX = ball.x - a.x;
+        const relY = ball.y - a.y;
+        const signedDist = relX * inwardNormalX + relY * inwardNormalY;
+
+        if (signedDist < ball.radius) {
+          const penetration = ball.radius - signedDist;
+          ball.x += inwardNormalX * penetration;
+          ball.y += inwardNormalY * penetration;
+
+          reflectVelocity(inwardNormalX, inwardNormalY);
+
+          if (!bounced) {
+            bounced = true;
+            collisions += 1;
+            if (sides < maxSides) {
+              sides += 1;
+            }
+
+            const speed = Math.hypot(ball.vx, ball.vy) * speedUpFactor;
+            const dir = Math.atan2(ball.vy, ball.vx);
+            ball.vx = Math.cos(dir) * speed;
+            ball.vy = Math.sin(dir) * speed;
+            ball.hue = (ball.hue + 14) % 360;
+          }
+        }
+      }
+    }
+
+    function drawPolygon(vertices) {
+      ctx.beginPath();
+      ctx.moveTo(vertices[0].x, vertices[0].y);
+      for (let i = 1; i < vertices.length; i += 1) {
+        ctx.lineTo(vertices[i].x, vertices[i].y);
+      }
+      ctx.closePath();
+
+      const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+      gradient.addColorStop(0, 'rgba(111, 163, 255, 0.2)');
+      gradient.addColorStop(1, 'rgba(44, 255, 210, 0.16)');
+
+      ctx.fillStyle = gradient;
+      ctx.strokeStyle = 'rgba(172, 201, 255, 0.9)';
+      ctx.lineWidth = 3;
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    function drawBall() {
+      const glow = ctx.createRadialGradient(ball.x, ball.y, 2, ball.x, ball.y, ball.radius * 2.6);
+      glow.addColorStop(0, `hsla(${ball.hue}, 100%, 72%, 1)`);
+      glow.addColorStop(1, `hsla(${ball.hue}, 100%, 55%, 0.12)`);
+
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+      ctx.fillStyle = glow;
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.radius * 0.62, 0, Math.PI * 2);
+      ctx.fillStyle = `hsla(${ball.hue}, 100%, 82%, 0.95)`;
+      ctx.fill();
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const vertices = polygonVertices(sides);
+      drawPolygon(vertices);
+      drawBall();
+
+      sideCounter.textContent = String(sides);
+      speedCounter.textContent = Math.hypot(ball.vx, ball.vy).toFixed(2);
+      hitCounter.textContent = String(collisions);
+    }
+
+    function animate() {
+      updateBall();
+      draw();
+      requestAnimationFrame(animate);
+    }
+
+    draw();
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
